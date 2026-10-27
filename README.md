@@ -63,23 +63,28 @@ returns the compiled effect's bytes and `mgfx::Effect::parse` reads them.
 - Only the versions above were checked against real files; other MGFX versions and the DirectX 11 profile are
   not covered by real data.
 
-## Tests
+## Running the tests
 
 ```sh
 cargo test --workspace
 ```
 
-Most tests build their own small XNB and MGFX files in memory (a truncated-at-every-length test, header and
+runs the tests that build their own small XNB and MGFX files in memory (a truncated-at-every-length test, header and
 object strictness, error offsets, compressed-file refusals, a texture and an effect read back as stored), plus the doc
-test above. No game file is kept in this repository. `tests/real_data.rs` reads a game's own content when you point
-`MONOGAME_FORMATS_CONTENT` at its `Content` folder (without it the test does nothing): every `.xnb` under it must parse
-and every effect must read.
+test above. No game file is kept in this repository. The test that reads a real game, `tests/real_data.rs`, skips with a
+line naming what it needs when `GAME_DATA` is not set. To run it, point the `GAME_DATA` environment variable at a TOML
+file naming your own copy, in the layout of [primase-testdata](https://github.com/Kalmarv/primase-testdata):
 
-```sh
-MONOGAME_FORMATS_CONTENT=/path/to/STUNTBOOST/Content cargo test --test real_data -- --nocapture
+```toml
+[installs]
+stuntboost = 'D:/games/STUNTBOOST'      # the folder that holds Content
+[run]
+require = 'gate'                        # optional: a missing input fails instead of skipping
 ```
 
-Against STUNTBOOST's `Content` it reads all 1873 `.xnb` files and all 18 effects.
+It parses every `.xnb` under STUNTBOOST's `Content` folder as a container and every effect among them as MGFX; against
+the Steam install that is 1873 files, 18 of them effects. [tests/inputs/README.md](tests/inputs/README.md) lists every
+input the tests can read (generated from `tests/inputs/mod.rs`).
 
 ## Documentation, contributing, license
 

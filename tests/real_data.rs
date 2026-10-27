@@ -1,16 +1,17 @@
-//! Reads a game's own content, when you point at it: set `MONOGAME_FORMATS_CONTENT` to a MonoGame game's `Content`
-//! folder (STUNTBOOST's, which this crate was written against). Without it these tests do nothing and pass; no game
-//! file is kept in this repository.
+//! Reads a game's own content: STUNTBOOST's `Content` folder, named by the `GAME_DATA` configuration (see
+//! tests/inputs/README.md). Without it the test skips with a line naming its key; no game file is kept in this
+//! repository.
 //!
 //! Every `.xnb` under the folder must parse as a container, and every one whose reader is `EffectReader` must parse
 //! as an MGFX effect (version 12), with all its indices in range.
 #![allow(
-    clippy::disallowed_methods,
-    clippy::disallowed_types,
     clippy::unwrap_used,
-    reason = "this test reads the files you point it at; the library does no I/O"
+    reason = "a test reading the files you point it at; the library does no I/O"
 )]
 
+mod inputs;
+
+use inputs::{Game, install_file};
 use monogame_formats::mgfx::Effect;
 use monogame_formats::xnb::Xnb;
 use std::path::{Path, PathBuf};
@@ -32,13 +33,12 @@ fn xnb_files(dir: &Path, out: &mut Vec<PathBuf>) {
 
 #[test]
 fn every_container_and_effect_of_a_game_reads() {
-    let Some(root) = std::env::var_os("MONOGAME_FORMATS_CONTENT") else {
-        eprintln!("MONOGAME_FORMATS_CONTENT is not set: skipped");
+    let Some(root) = install_file(Game::Stuntboost, "Content") else {
         return;
     };
     let mut files = Vec::new();
-    xnb_files(Path::new(&root), &mut files);
-    assert!(!files.is_empty(), "no .xnb under {}", Path::new(&root).display());
+    xnb_files(&root, &mut files);
+    assert!(!files.is_empty(), "no .xnb under {}", root.display());
     let mut effects = 0usize;
     for path in &files {
         let bytes = std::fs::read(path).unwrap();

@@ -12,6 +12,9 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[dev-dependencies]
+primase-testdata.workspace = true
+
 [dependencies]
 primase-foundations.workspace = true
 thiserror.workspace = true
@@ -32,6 +35,7 @@ publish = false
 
 [workspace.dependencies]
 primase-foundations = { git = "https://github.com/Kalmarv/primase-foundations", rev = "05dc616e7bd14cad63c4e5218be6e8b79cee60ce" }
+primase-testdata = { git = "https://github.com/Kalmarv/primase-testdata", rev = "71a28a5b188b259e1d49681823aa00996260f544" }
 thiserror = { version = "=2.0.21", default-features = false, features = ["std"] }
 
 [workspace.lints.rust]

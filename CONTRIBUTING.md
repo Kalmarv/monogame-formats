@@ -12,7 +12,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
 ```
 
 CI runs these four on Linux and Windows. The tests build their own XNB and MGFX bytes in memory and need no game
-files (`tests/real_data.rs` reads a game's `Content` folder if `MONOGAME_FORMATS_CONTENT` is set). The parsers deny panicking constructs (`unwrap`, unchecked arithmetic, indexing and truncating casts) outside
+files (`tests/real_data.rs` reads STUNTBOOST's `Content` folder when `GAME_DATA` names it; see the README). The parsers deny panicking constructs (`unwrap`, unchecked arithmetic, indexing and truncating casts) outside
 tests, so a new read goes through the checked reads of `Content` and returns an `Error` naming the offset.
 
 ## Reporting a file the crate cannot read
