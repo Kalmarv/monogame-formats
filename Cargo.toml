@@ -1,6 +1,6 @@
 [package]
-name = "morpheme-formats"
-description = "Morpheme 32-bit big-endian simple bundles and reference rigs"
+name = "monogame-formats"
+description = "MonoGame (XNA 4.0, FNA) content: the XNB container, its type-reader table, the built-in readers' values and compiled MGFX effects"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
