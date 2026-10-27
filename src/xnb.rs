@@ -341,18 +341,26 @@ impl<'a> Xnb<'a> {
         if format != SURFACE_FORMAT_COLOR {
             return Err(bad(at, format!("SurfaceFormat {format}: only Color (0) is read")));
         }
-        let (width, height, levels) = (c.i32()?, c.i32()?, c.i32()?);
-        let dimension = |v: i32, what: &str| match u32::try_from(v) {
+        let width_at = c.position();
+        let width = c.i32()?;
+        let height_at = c.position();
+        let height = c.i32()?;
+        let levels_at = c.position();
+        let levels = c.i32()?;
+        let dimension = |v: i32, at: usize, what: &str| match u32::try_from(v) {
             Ok(n) if n > 0 => Ok(n),
-            _ => Err(bad(at, format!("{what} {v}"))),
+            _ => Err(bad(at, format!("{what} {v}: expected 1 or more"))),
         };
-        let (width, height) = (dimension(width, "width")?, dimension(height, "height")?);
+        let (width, height) = (
+            dimension(width, width_at, "width")?,
+            dimension(height, height_at, "height")?,
+        );
         let most = width.max(height).ilog2().saturating_add(1);
         let levels = match u32::try_from(levels) {
             Ok(n) if (1..=most).contains(&n) => n,
             _ => {
                 return Err(bad(
-                    at,
+                    levels_at,
                     format!("{levels} levels for {width} x {height} (1 to {most})"),
                 ));
             }
@@ -504,8 +512,14 @@ impl<'a> Content<'a> {
         let at = self.position();
         let len = self.seven_bit()?;
         let len = usize::try_from(len).map_err(|_| bad(at, format!("string length {len}")))?;
+        let start = self.position();
         let bytes = self.bytes(len)?;
-        std::str::from_utf8(bytes).map_err(|e| bad(at, format!("a string that is not UTF-8: {e}")))
+        std::str::from_utf8(bytes).map_err(|e| {
+            bad(
+                start.saturating_add(e.valid_up_to()),
+                format!("a string that is not UTF-8: {e}"),
+            )
+        })
     }
 
     /// A byte array as XNA's `ArrayReader<Byte>` writes it: an i32 count, then the bytes.
@@ -675,13 +689,34 @@ mod tests {
         assert_eq!(t.levels[0], (0..16).collect::<Vec<u8>>());
         assert_eq!(t.levels[1], [100, 101, 102, 103]);
         let err = |b: &[u8]| Xnb::parse(&file(b)).unwrap().texture2d().unwrap_err().to_string();
-        assert!(err(&body(4, 1, &[16])).contains("SurfaceFormat 4"), "DXT1");
-        assert!(err(&body(0, 1, &[12])).contains("12 bytes, not 16"));
-        assert!(err(&body(0, 2, &[16])).contains("short") || err(&body(0, 2, &[16])).contains("XNB at byte"));
-        assert!(err(&body(0, 3, &[16, 4, 4])).contains("3 levels for 2 x 2"));
+        // the body: the type id, then the format, width, height, level count and the first level's byte count
+        let origin = HEADER + 1 + 1 + TEXTURE.len() + 4 + 1;
+        let at = |field: usize| origin + 1 + 4 * field;
+        assert_eq!(
+            err(&body(4, 1, &[16])),
+            format!("XNB at byte {}: SurfaceFormat 4: only Color (0) is read", at(0)),
+            "DXT1"
+        );
+        assert_eq!(
+            err(&body(0, 1, &[12])),
+            format!("XNB at byte {}: level 0: 12 bytes, not 16 (Color pixels)", at(4))
+        );
+        // the second level is missing: its byte count is read at the file's end
+        let missing = err(&body(0, 2, &[16]));
+        assert!(
+            missing.starts_with(&format!("XNB at byte {}: ", at(4) + 4 + 16)),
+            "{missing}"
+        );
+        assert_eq!(
+            err(&body(0, 3, &[16, 4, 4])),
+            format!("XNB at byte {}: 3 levels for 2 x 2 (1 to 2)", at(3))
+        );
         let mut trailing = body(0, 1, &[16]);
         trailing.push(0);
-        assert!(!err(&trailing).is_empty());
+        assert_eq!(
+            err(&trailing),
+            format!("XNB at byte {}: 1 bytes after the object", at(4) + 4 + 16)
+        );
         let other = xnb(0, &[STRING_READER], 0, &string_body(1, ""));
         assert!(
             Xnb::parse(&other)
@@ -691,6 +726,49 @@ mod tests {
                 .to_string()
                 .contains("not a texture's")
         );
+    }
+
+    /// Width, height and the level count name their own bytes, not the format field's.
+    #[test]
+    fn a_texture_size_error_names_the_bytes_that_hold_it() {
+        const TEXTURE: &str = "Microsoft.Xna.Framework.Content.Texture2DReader";
+        let origin = HEADER + 1 + 1 + TEXTURE.len() + 4 + 1;
+        for (width, height, field) in [(0, 2, 1), (2, -1, 2)] {
+            let mut b = vec![1];
+            for v in [0, width, height, 1, 16] {
+                b.extend_from_slice(&i32::to_le_bytes(v));
+            }
+            b.extend_from_slice(&[0; 16]);
+            let f = xnb(0, &[TEXTURE], 0, &b);
+            let message = Xnb::parse(&f).unwrap().texture2d().unwrap_err().to_string();
+            assert!(
+                message.starts_with(&format!("XNB at byte {}: ", origin + 1 + 4 * field)),
+                "{message}"
+            );
+        }
+        // a string that is not UTF-8 names its bytes, not the length before them
+        let f = xnb(0, &[STRING_READER], 0, &[1, 2, b'a', 0xFF]);
+        let message = Xnb::parse(&f).unwrap().string().unwrap_err().to_string();
+        assert!(
+            message.starts_with(&format!("XNB at byte {}: ", f.len() - 2 + 1)),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn counts_the_file_cannot_hold_are_errors() {
+        // 4 billion readers, a string of 2 GiB, a byte array of i32::MAX bytes, in a few bytes
+        let mut f = b"XNBd".to_vec();
+        f.extend_from_slice(&[VERSION, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF, 0x0F]);
+        let size = f.len() as u32;
+        f[6..10].copy_from_slice(&size.to_le_bytes());
+        assert!(Xnb::parse(&f).is_err());
+        let f = xnb(0, &[STRING_READER], 0, &[1, 0xFF, 0xFF, 0xFF, 0xFF, 0x07]);
+        assert!(Xnb::parse(&f).unwrap().string().is_err());
+        let mut body = vec![2];
+        body.extend_from_slice(&i32::MAX.to_le_bytes());
+        let f = xnb(0, &[STRING_READER, BYTES_READER], 0, &body);
+        assert!(Xnb::parse(&f).unwrap().byte_array().is_err());
     }
 
     #[test]

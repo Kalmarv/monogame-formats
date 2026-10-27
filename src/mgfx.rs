@@ -7,7 +7,7 @@
 //! Layout (little-endian; strings are .NET's, a 7-bit encoded length then UTF-8):
 //! - header: `MGFX`, the version (12), the profile (0 OpenGL, 1 DirectX 11), the effect key (i32), then a byte that is
 //!   1 in every file checked;
-//! - constant buffers: an i32 count, each its name, a byte 0, its size in bytes (i16), a byte 0, an i32 count of
+//! - constant buffers: an i32 count, each its name, a byte 0, its size in bytes (u16), a byte 0, an i32 count of
 //!   parameters and for each the parameter's index (i32) and its offset in the buffer (u16);
 //! - shaders: an i32 count, each the stage (a byte, 0 vertex 1 pixel), the source file name and entry point (strings,
 //!   empty in every file checked), a byte 0, the code (an i32 length and the bytes), the samplers (a byte count; each the
@@ -314,6 +314,7 @@ impl<'a> Reader<'a> {
         let mut out = Vec::new();
         for _ in 0..count {
             let class = self.u8()?;
+            let ty_at = self.position();
             let ty = self.u8()?;
             let name = self.string()?;
             let semantic = self.string()?;
@@ -322,7 +323,6 @@ impl<'a> Reader<'a> {
             let columns = self.u8()?;
             let elements = self.parameters(depth.saturating_add(1))?;
             let members = self.parameters(depth.saturating_add(1))?;
-            let at = self.position();
             let defaults = if elements.is_empty() && members.is_empty() {
                 match ty {
                     // bool, int and float: MojoShader stores each as a float
@@ -334,7 +334,7 @@ impl<'a> Reader<'a> {
                         }
                         Some(v)
                     }
-                    4 => return Err(bad(at, format!("{name}: a string parameter is not read"))),
+                    4 => return Err(bad(ty_at, format!("{name}: a string parameter is not read"))),
                     _ => None,
                 }
             } else {
@@ -389,7 +389,14 @@ impl<'a> Reader<'a> {
         })
     }
 
-    fn shader(&mut self) -> Result<Shader<'a>> {
+    /// One shader. `buffers` is how many constant buffers the effect has: the shader's buffer indices are checked
+    /// against it here. Each sampler's parameter index is pushed to `sampler_parameters` (offset, index, sampler name)
+    /// to be checked once the parameter table has been read.
+    fn shader(
+        &mut self,
+        buffers: usize,
+        sampler_parameters: &mut Vec<(usize, u8, String)>,
+    ) -> Result<Shader<'a>> {
         let at = self.position();
         let stage = match self.u8()? {
             0 => Stage::Vertex,
@@ -405,11 +412,29 @@ impl<'a> Reader<'a> {
         let code = self.bytes(length)?;
         let mut samplers = Vec::new();
         for _ in 0..self.u8()? {
-            samplers.push(self.sampler()?);
+            let sampler = self.sampler()?;
+            // the sampler's last byte is its parameter index
+            sampler_parameters.push((
+                self.position().saturating_sub(1),
+                sampler.parameter,
+                sampler.name.clone(),
+            ));
+            samplers.push(sampler);
         }
         let mut constant_buffers = Vec::new();
         for _ in 0..self.u8()? {
-            constant_buffers.push(self.u8()?);
+            let at = self.position();
+            let b = self.u8()?;
+            if usize::from(b) >= buffers {
+                return Err(bad(
+                    at,
+                    format!(
+                        "a shader reads constant buffer {b} of {buffers} (0 to {})",
+                        buffers.saturating_sub(1)
+                    ),
+                ));
+            }
+            constant_buffers.push(b);
         }
         let mut attributes = Vec::new();
         for _ in 0..self.u8()? {
@@ -494,18 +519,19 @@ impl<'a> Effect<'a> {
         let key = r.i32()?;
         r.constant(1, "the byte after the effect key")?;
         let mut constant_buffers = Vec::new();
+        // (offset, index, buffer name) of each parameter index a buffer holds
+        let mut buffer_parameters = Vec::new();
         for _ in 0..r.count("constant buffers")? {
             let name = r.string()?;
             r.constant(0, "the byte before a constant buffer's size")?;
-            let size = r.i16()?;
-            let size =
-                u16::try_from(size).map_err(|_| bad(r.position(), format!("constant buffer size {size}")))?;
+            let size = r.u16()?;
             r.constant(0, "the byte after a constant buffer's size")?;
             let mut parameters = Vec::new();
             for _ in 0..r.count("constant buffer parameters")? {
                 let at = r.position();
                 let index = r.i32()?;
                 let index = u32::try_from(index).map_err(|_| bad(at, format!("parameter index {index}")))?;
+                buffer_parameters.push((at, index, name.clone()));
                 parameters.push((index, r.u16()?));
             }
             constant_buffers.push(ConstantBuffer {
@@ -515,8 +541,9 @@ impl<'a> Effect<'a> {
             });
         }
         let mut shaders = Vec::new();
+        let mut sampler_parameters = Vec::new();
         for _ in 0..r.count("shaders")? {
-            shaders.push(r.shader()?);
+            shaders.push(r.shader(constant_buffers.len(), &mut sampler_parameters)?);
         }
         let parameters = r.parameters(0)?;
         let mut techniques = Vec::new();
@@ -541,43 +568,30 @@ impl<'a> Effect<'a> {
                 format!("{} bytes after the effect", r.remaining()),
             ));
         }
-        // every index a buffer, a sampler or a shader makes is in range
-        for buffer in &constant_buffers {
-            for &(index, _) in &buffer.parameters {
-                if usize::try_from(index).is_ok_and(|i| i < parameters.len()) {
-                    continue;
-                }
+        // every parameter index a buffer or a sampler holds is in range
+        for (at, index, owner) in buffer_parameters {
+            if usize::try_from(index).is_ok_and(|i| i < parameters.len()) {
+                continue;
+            }
+            return Err(bad(
+                at,
+                format!(
+                    "constant buffer {owner} holds parameter {index} of {} (0 to {})",
+                    parameters.len(),
+                    parameters.len().saturating_sub(1)
+                ),
+            ));
+        }
+        for (at, index, owner) in sampler_parameters {
+            if usize::from(index) >= parameters.len() {
                 return Err(bad(
-                    0,
+                    at,
                     format!(
-                        "constant buffer {} holds parameter {index} of {}",
-                        buffer.name,
-                        parameters.len()
+                        "sampler {owner} names parameter {index} of {} (0 to {})",
+                        parameters.len(),
+                        parameters.len().saturating_sub(1)
                     ),
                 ));
-            }
-        }
-        for shader in &shaders {
-            for &b in &shader.constant_buffers {
-                if usize::from(b) >= constant_buffers.len() {
-                    return Err(bad(
-                        0,
-                        format!("a shader reads constant buffer {b} of {}", constant_buffers.len()),
-                    ));
-                }
-            }
-            for s in &shader.samplers {
-                if usize::from(s.parameter) >= parameters.len() {
-                    return Err(bad(
-                        0,
-                        format!(
-                            "sampler {} names parameter {} of {}",
-                            s.name,
-                            s.parameter,
-                            parameters.len()
-                        ),
-                    ));
-                }
             }
         }
         Ok(Effect {
@@ -769,6 +783,85 @@ mod tests {
         bytes.splice(at..=at, [0x90, 0x80, 0x80, 0x80, 0x7F]);
         let message = Effect::parse(&bytes).unwrap_err().to_string();
         assert!(message.contains("over 32 bits"), "{message}");
+    }
+
+    /// The offset an effect error names, and its detail.
+    fn error_of(bytes: &[u8]) -> (u128, String) {
+        match Effect::parse(bytes).unwrap_err() {
+            Error::Effect { offset, detail } => (offset, detail),
+            other => panic!("not an effect error: {other}"),
+        }
+    }
+
+    fn find(bytes: &[u8], needle: &[u8]) -> usize {
+        bytes.windows(needle.len()).position(|w| w == needle).unwrap()
+    }
+
+    #[test]
+    fn a_constant_buffer_size_is_the_two_bytes_stored_unsigned() {
+        let mut bytes = effect(VERSION, 0, 0);
+        let size = find(&bytes, b"ps_uniforms_vec4") + 16 + 1;
+        assert_eq!(bytes[size..size + 2], 16i16.to_le_bytes());
+        bytes[size..size + 2].copy_from_slice(&40_000u16.to_le_bytes());
+        let e = Effect::parse(&bytes).unwrap();
+        assert_eq!(e.constant_buffers[0].size, 40_000);
+    }
+
+    #[test]
+    fn an_index_out_of_range_names_the_bytes_that_hold_it() {
+        let good = effect(VERSION, 0, 0);
+        // a constant buffer's parameter index (i32), after its name, a byte, the size, a byte and the count
+        let at = find(&good, b"ps_uniforms_vec4") + 16 + 1 + 2 + 1 + 4;
+        let mut bytes = good.clone();
+        bytes[at] = 9;
+        let (offset, detail) = error_of(&bytes);
+        assert_eq!(offset, at as u128, "{detail}");
+        assert!(detail.contains("holds parameter 9 of 2"), "{detail}");
+        // a sampler's parameter byte, after its name
+        let at = find(&good, b"ps_s0") + 5;
+        assert_eq!(good[at], 1);
+        let mut bytes = good.clone();
+        bytes[at] = 7;
+        let (offset, detail) = error_of(&bytes);
+        assert_eq!(offset, at as u128, "{detail}");
+        assert!(detail.contains("ps_s0 names parameter 7 of 2"), "{detail}");
+        // a shader's constant buffer index, after the sampler's parameter and the count
+        let at = find(&good, b"ps_s0") + 5 + 1 + 1;
+        assert_eq!(good[at], 0);
+        let mut bytes = good;
+        bytes[at] = 3;
+        let (offset, detail) = error_of(&bytes);
+        assert_eq!(offset, at as u128, "{detail}");
+        assert!(detail.contains("reads constant buffer 3 of 1"), "{detail}");
+    }
+
+    #[test]
+    fn a_string_parameter_is_refused_at_its_type_byte() {
+        let mut bytes = effect(VERSION, 0, 0);
+        // "Albedo": its length byte, before that the type byte
+        let at = find(&bytes, b"Albedo") - 1 - 1;
+        assert_eq!(bytes[at], 7);
+        bytes[at] = 4;
+        let (offset, detail) = error_of(&bytes);
+        assert_eq!(offset, at as u128, "{detail}");
+        assert!(detail.contains("Albedo: a string parameter"), "{detail}");
+    }
+
+    #[test]
+    fn counts_and_lengths_the_bytes_cannot_hold_are_errors() {
+        // every i32 of the fixture made i32::MAX in turn: an error or a read, never a panic
+        let good = effect(VERSION, 0, 0);
+        for at in 0..good.len() - 3 {
+            let mut bytes = good.clone();
+            bytes[at..at + 4].copy_from_slice(&i32::MAX.to_le_bytes());
+            let _ = Effect::parse(&bytes);
+        }
+        // a shader of 2 GiB in a few bytes
+        let mut bytes = good;
+        let code = find(&bytes, b"void main() {}") - 4;
+        bytes[code..code + 4].copy_from_slice(&i32::MAX.to_le_bytes());
+        let (offset, _) = error_of(&bytes);
+        assert!(offset >= code as u128);
     }
 
     #[test]
