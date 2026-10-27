@@ -69,10 +69,17 @@ returns the compiled effect's bytes and `mgfx::Effect::parse` reads them.
 cargo test --workspace
 ```
 
-All tests build their own small XNB and MGFX files in memory (a truncated-at-every-length test, header and
-object strictness, compressed-file refusals, a texture and an effect read back as stored), plus the doc test above. This
-repository has no tests that read game files, so there is no `GAME_DATA` setup here; to try the crate on your own
-copy of a MonoGame game, read a `.xnb` yourself and pass its bytes to `Xnb::parse`.
+Most tests build their own small XNB and MGFX files in memory (a truncated-at-every-length test, header and
+object strictness, error offsets, compressed-file refusals, a texture and an effect read back as stored), plus the doc
+test above. No game file is kept in this repository. `tests/real_data.rs` reads a game's own content when you point
+`MONOGAME_FORMATS_CONTENT` at its `Content` folder (without it the test does nothing): every `.xnb` under it must parse
+and every effect must read.
+
+```sh
+MONOGAME_FORMATS_CONTENT=/path/to/STUNTBOOST/Content cargo test --test real_data -- --nocapture
+```
+
+Against STUNTBOOST's `Content` it reads all 1873 `.xnb` files and all 18 effects.
 
 ## Documentation, contributing, license
 
