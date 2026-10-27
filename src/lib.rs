@@ -40,7 +40,7 @@
 //!
 //! For an effect, [`xnb::Xnb::effect`] returns the compiled effect's bytes and [`mgfx::Effect::parse`] reads them.
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
 pub mod mgfx;
 pub mod xnb;
