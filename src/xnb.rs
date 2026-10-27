@@ -39,19 +39,32 @@ impl std::fmt::Display for Compression {
     }
 }
 
+/// Why a read was refused. Each message names the offset and what was expected or found; the `Effect` variant is the
+/// one [`crate::mgfx`] returns.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// The bytes break the format, at this absolute offset.
     #[error("XNB at byte {offset}: {detail}")]
-    Format { offset: u128, detail: String },
+    Format {
+        /// The byte offset in the file.
+        offset: u128,
+        /// What was expected or found.
+        detail: String,
+    },
     /// The bytes of an effect (`mgfx`) break its format, at this offset in the effect's own bytes.
     #[error("MGFX effect at byte {offset} of its bytes: {detail}")]
-    Effect { offset: u128, detail: String },
+    Effect {
+        /// The byte offset in the effect's bytes.
+        offset: u128,
+        /// What was expected or found.
+        detail: String,
+    },
     /// A compressed XNB: only uncompressed content is read.
     #[error("XNB compressed with {0}: only uncompressed content is read")]
     Compressed(Compression),
 }
 
+/// A result with this module's [`Error`].
 pub type Result<T> = std::result::Result<T, Error>;
 
 fn bad(offset: usize, detail: impl Into<String>) -> Error {
@@ -96,6 +109,7 @@ pub struct TypeReader {
     /// (`BytingPipeline.GLTFReader, BytingPipeline`, `Microsoft.Xna.Framework.Content.ArrayReader`1[[System.Byte,
     /// System.Private.CoreLib, ...]]`).
     pub name: String,
+    /// The reader's version, as stored.
     pub version: i32,
 }
 
@@ -186,7 +200,9 @@ impl TypeReader {
 /// level a slice of the file.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Texture2D<'a> {
+    /// Width in pixels.
     pub width: u32,
+    /// Height in pixels.
     pub height: u32,
     /// The levels, largest first; level `i` is `max(1, width >> i)` by `max(1, height >> i)` pixels of 4 bytes.
     pub levels: Vec<&'a [u8]>,
@@ -204,7 +220,9 @@ pub struct Xnb<'a> {
     pub version: u8,
     /// Built for the HiDef profile (flag 0x01).
     pub hi_def: bool,
+    /// The type-reader table, in file order; an object's type id is one more than its reader's index.
     pub readers: Vec<TypeReader>,
+    /// The shared-resource count as stored (shared resources are not read: see [`Content::end`]).
     pub shared_resources: u32,
     /// The primary object, from its type id to the end of the file.
     body: &'a [u8],
@@ -420,6 +438,7 @@ impl<'a> Content<'a> {
         self.origin.saturating_add(self.cursor.position())
     }
 
+    /// The next `n` bytes.
     pub fn bytes(&mut self, n: usize) -> Result<&'a [u8]> {
         Ok(self.cursor.take(n)?)
     }
@@ -428,26 +447,32 @@ impl<'a> Content<'a> {
         Ok(self.cursor.array()?)
     }
 
+    /// A byte.
     pub fn u8(&mut self) -> Result<u8> {
         Ok(self.cursor.u8()?)
     }
 
+    /// A little-endian `i16`.
     pub fn i16(&mut self) -> Result<i16> {
         Ok(self.cursor.i16(Endian::Little)?)
     }
 
+    /// A little-endian `u16`.
     pub fn u16(&mut self) -> Result<u16> {
         Ok(self.cursor.u16(Endian::Little)?)
     }
 
+    /// A little-endian `i32`.
     pub fn i32(&mut self) -> Result<i32> {
         Ok(self.cursor.i32(Endian::Little)?)
     }
 
+    /// A little-endian `u32`.
     pub fn u32(&mut self) -> Result<u32> {
         Ok(self.cursor.u32(Endian::Little)?)
     }
 
+    /// A little-endian `f32`.
     pub fn f32(&mut self) -> Result<f32> {
         Ok(self.cursor.f32(Endian::Little)?)
     }

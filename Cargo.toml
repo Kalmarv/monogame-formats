@@ -1,6 +1,10 @@
 [package]
 name = "monogame-formats"
-description = "MonoGame (XNA 4.0, FNA) content: the XNB container, its type-reader table, the built-in readers' values and compiled MGFX effects"
+description = "Read MonoGame/XNA content: the XNB container and compiled MGFX effects, with checked reads that never panic on untrusted bytes"
+keywords = ["monogame", "xna", "xnb", "mgfx", "gamedev"]
+categories = ["parser-implementations", "game-development"]
+readme = "README.md"
+documentation = "https://docs.rs/monogame-formats"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

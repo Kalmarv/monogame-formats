@@ -1,14 +1,16 @@
-//! MonoGame's compiled effect (MGFX), as `EffectReader` stores it in an XNB, version 12 (the BytingGames fork of
-//! MonoGame 3.8.1; the upstream releases write 10 and 11), profile OpenGL: shaders as the GLSL MojoShader wrote from the
-//! effect's Shader Model 3 programs.
+//! The compiled effect (MGFX) an XNB of MonoGame's `EffectReader` holds: version 12, written by the Byting Games fork
+//! of MonoGame 3.8.1 (upstream MonoGame releases write 10 and 11). Shaders are the GLSL MojoShader wrote from the
+//! effect's Shader Model 3 programs (profile OpenGL); a DirectX 11 profile byte is read the same way, but only OpenGL
+//! files were checked. Written against the 18 effects of STUNTBOOST (Byting Games); other versions are refused by
+//! number.
 //!
 //! Layout (little-endian; strings are .NET's, a 7-bit encoded length then UTF-8):
 //! - header: `MGFX`, the version (12), the profile (0 OpenGL, 1 DirectX 11), the effect key (i32), then a byte that is
-//!   1 in every file read;
+//!   1 in every file checked;
 //! - constant buffers: an i32 count, each its name, a byte 0, its size in bytes (i16), a byte 0, an i32 count of
 //!   parameters and for each the parameter's index (i32) and its offset in the buffer (u16);
 //! - shaders: an i32 count, each the stage (a byte, 0 vertex 1 pixel), the source file name and entry point (strings,
-//!   empty in every file read), a byte 0, the code (an i32 length and the bytes), the samplers (a byte count; each the
+//!   empty in every file checked), a byte 0, the code (an i32 length and the bytes), the samplers (a byte count; each the
 //!   kind, texture slot and sampler slot, whether it has a state, that state's 20 bytes, then its name and the index of
 //!   the parameter that holds its texture), the constant buffers it reads (a byte count, each a byte index), its vertex
 //!   attributes (a byte count; each its name, usage, usage index, location (i16) and a byte 1);
@@ -20,8 +22,8 @@
 //!   three bytes saying whether it has a blend, a depth-stencil and a rasterizer state);
 //! - the tail, `MGFX` again, at the end of the effect's bytes.
 //!
-//! A pass with a state, a profile other than OpenGL, another version, a byte that is not what every file read has, an
-//! annotation or a string parameter is refused, naming it: none of those is in any file read, and their layout is not
+//! A pass with a state, another version, a byte that is not what every file checked has, an
+//! annotation or a string parameter is refused, naming it: none of those is in any file checked, and their layout is not
 //! known.
 #![deny(
     clippy::arithmetic_side_effects,
@@ -46,16 +48,21 @@ pub enum Profile {
     DirectX11,
 }
 
+/// The pipeline stage a shader runs in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Stage {
+    /// A vertex shader.
     Vertex,
+    /// A pixel (fragment) shader.
     Pixel,
 }
 
 /// A constant buffer: the effect's parameters at offsets in a block of `size` bytes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConstantBuffer {
+    /// The buffer's name in the shader's code (`ps_uniforms_vec4`).
     pub name: String,
+    /// The block's size in bytes.
     pub size: u16,
     /// (parameter index in [`Effect::parameters`], byte offset).
     pub parameters: Vec<(u32, u16)>,
@@ -64,9 +71,13 @@ pub struct ConstantBuffer {
 /// What a sampler samples (MonoGame's `SamplerType`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SamplerKind {
+    /// A 2D texture.
     Sampler2D,
+    /// A cube map.
     SamplerCube,
+    /// A volume (3D) texture.
     SamplerVolume,
+    /// A 1D texture.
     Sampler1D,
 }
 
@@ -75,19 +86,30 @@ pub enum SamplerKind {
 /// the anisotropy, the largest mip level and the mip bias.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SamplerState {
+    /// The address modes, three bytes of `TextureAddressMode` as stored.
     pub address: [u8; 3],
+    /// The border colour, four bytes as stored.
     pub border: [u8; 4],
+    /// `TextureFilter`, as stored.
     pub filter: u8,
+    /// The anisotropy limit.
     pub max_anisotropy: i32,
+    /// The largest mip level used.
     pub max_mip_level: i32,
+    /// The mip level bias.
     pub mip_bias: f32,
 }
 
+/// A texture sampler a shader reads.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sampler {
+    /// What the sampler samples.
     pub kind: SamplerKind,
+    /// The texture slot, as stored.
     pub texture_slot: u8,
+    /// The sampler slot, as stored.
     pub sampler_slot: u8,
+    /// The sampler state the effect states, if it states one.
     pub state: Option<SamplerState>,
     /// The sampler's name in the shader's code (`ps_s0`).
     pub name: String,
@@ -100,22 +122,32 @@ pub struct Sampler {
 /// sample, 12 tessellate factor) and index, and the name and location the code gives it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Attribute {
+    /// The attribute's name in the shader's code (`vs_v0`).
     pub name: String,
+    /// `VertexElementUsage`, as stored.
     pub usage: u8,
+    /// The usage index (the second texture coordinate is usage 2, index 1).
     pub index: u8,
+    /// The attribute's location in the code.
     pub location: i16,
 }
 
+/// One compiled shader.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Shader<'a> {
+    /// The stage it runs in.
     pub stage: Stage,
+    /// The source file name as stored (empty in the files this crate was written against).
     pub source_file: String,
+    /// The entry point as stored (empty in the files this crate was written against).
     pub entry_point: String,
     /// The GLSL (or DXBC) as stored.
     pub code: &'a [u8],
+    /// The samplers it reads.
     pub samplers: Vec<Sampler>,
     /// The indices in [`Effect::constant_buffers`] of the buffers it reads.
     pub constant_buffers: Vec<u8>,
+    /// The vertex attributes it takes (vertex shaders).
     pub attributes: Vec<Attribute>,
 }
 
@@ -123,39 +155,60 @@ pub struct Shader<'a> {
 /// struct) and `ty` its `EffectParameterType` (1 bool, 2 int, 3 float, 7 texture 2D, 9 texture cube, ...).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Parameter {
+    /// `EffectParameterClass`, as stored.
     pub class: u8,
+    /// `EffectParameterType`, as stored.
     pub ty: u8,
+    /// The parameter's name.
     pub name: String,
+    /// The semantic as stored, empty when it has none.
     pub semantic: String,
+    /// Rows, as stored.
     pub rows: u8,
+    /// Columns, as stored.
     pub columns: u8,
+    /// The elements of an array parameter.
     pub elements: Vec<Parameter>,
+    /// The members of a struct parameter.
     pub members: Vec<Parameter>,
     /// The defaults of a plain bool, int or float, `rows * columns` of them.
     pub defaults: Option<Vec<f32>>,
 }
 
+/// One pass of a technique: the shaders it runs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Pass {
+    /// The pass's name.
     pub name: String,
-    /// Indices in [`Effect::shaders`].
+    /// Index in [`Effect::shaders`] of the vertex shader, if the pass has one.
     pub vertex_shader: Option<usize>,
+    /// Index in [`Effect::shaders`] of the pixel shader, if the pass has one.
     pub pixel_shader: Option<usize>,
 }
 
+/// A technique: a named sequence of passes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Technique {
+    /// The technique's name.
     pub name: String,
+    /// Its passes, in order.
     pub passes: Vec<Pass>,
 }
 
+/// A compiled effect, read by [`Effect::parse`]. Every index it holds into another table is checked to be in range.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Effect<'a> {
+    /// What the shaders are written in.
     pub profile: Profile,
+    /// The effect key, as stored.
     pub key: i32,
+    /// The constant buffers.
     pub constant_buffers: Vec<ConstantBuffer>,
+    /// The shaders, in the order passes index them.
     pub shaders: Vec<Shader<'a>>,
+    /// The parameters.
     pub parameters: Vec<Parameter>,
+    /// The techniques.
     pub techniques: Vec<Technique>,
 }
 
@@ -231,7 +284,7 @@ impl<'a> Reader<'a> {
         Ok(self.content.string().map_err(effect)?.to_owned())
     }
 
-    /// A byte that must be `expected` in every file read.
+    /// A byte that must be `expected` in every file checked.
     fn constant(&mut self, expected: u8, what: &str) -> Result<()> {
         let at = self.position();
         let b = self.u8()?;
@@ -240,7 +293,7 @@ impl<'a> Reader<'a> {
         } else {
             Err(bad(
                 at,
-                format!("{what}: {b}, where every file read has {expected} (the layout is not known)"),
+                format!("{what}: {b}, where every file checked has {expected} (the layout is not known)"),
             ))
         }
     }
