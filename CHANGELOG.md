@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 (2026-10-29)
 
 - Depends on primase-foundations 0.3.0, which has no type in this crate's API.
 - The real-data input's description counts 1,875 `.xnb` files (18 of them effects), the install's count since the
