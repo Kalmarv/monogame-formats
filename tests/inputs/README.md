@@ -20,6 +20,6 @@ fails when they differ); [the README](../../README.md#running-the-tests) says ho
 
 | key | status | gate | about | source |
 | --- | --- | --- | --- | --- |
-| `installs.stuntboost/Content` | live | yes | STUNTBOOST's `Content` folder (1873 `.xnb` files, 18 of them effects), every file read by tests/real_data.rs | the user's own install |
+| `installs.stuntboost/Content` | live | yes | STUNTBOOST's `Content` folder (1875 `.xnb` files, 18 of them effects), every file read by tests/real_data.rs | the user's own install |
 
 <!-- end of real-data inputs -->

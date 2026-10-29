@@ -83,7 +83,7 @@ require = 'gate'                        # optional: a missing input fails instea
 ```
 
 It parses every `.xnb` under STUNTBOOST's `Content` folder as a container and every effect among them as MGFX; against
-the Steam install that is 1873 files, 18 of them effects. [tests/inputs/README.md](tests/inputs/README.md) lists every
+the Steam install that is 1875 files, 18 of them effects. [tests/inputs/README.md](tests/inputs/README.md) lists every
 input the tests can read (generated from `tests/inputs/mod.rs`).
 
 ## Documentation, contributing, license

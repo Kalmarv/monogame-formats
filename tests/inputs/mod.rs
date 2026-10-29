@@ -24,7 +24,7 @@ primase_testdata::inputs! {
         Query::Install(Game::Stuntboost, Some("Content")) => {
             status: Live,
             gate: true,
-            about: r#"STUNTBOOST's `Content` folder (1873 `.xnb` files, 18 of them effects), every file read by tests/real_data.rs"#,
+            about: r#"STUNTBOOST's `Content` folder (1875 `.xnb` files, 18 of them effects), every file read by tests/real_data.rs"#,
             source: r#"the user's own install"#,
         },
     }
