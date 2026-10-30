@@ -92,3 +92,8 @@ API documentation: `cargo doc --open` (once published, <https://docs.rs/monogame
 [CONTRIBUTING.md](CONTRIBUTING.md) to build or to report a file the crate cannot read.
 
 Licensed under the GNU General Public License, version 3 or later (see [LICENSE](LICENSE)).
+
+## Check the examples
+
+From the repository root, `cargo test -p monogame-formats --doc` checks the crate documentation, and
+`cargo build -p monogame-formats --examples` builds its example programs. Examples that read paths need the caller's files; the repository ships no game assets.
