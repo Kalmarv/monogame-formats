@@ -1,5 +1,7 @@
 # monogame-formats
 
+[![crates.io: monogame-formats](https://img.shields.io/crates/v/monogame-formats?label=monogame-formats)](https://crates.io/crates/monogame-formats) [![docs.rs](https://img.shields.io/docsrs/monogame-formats)](https://docs.rs/monogame-formats) [![CI](https://img.shields.io/github/actions/workflow/status/Kalmarv/monogame-formats/ci.yml?branch=main&label=CI)](https://github.com/Kalmarv/monogame-formats/actions/workflows/ci.yml)
+
 A Rust library that reads MonoGame and XNA content files (`.xnb`) and the compiled MGFX effects stored in them.
 
 ## Features
