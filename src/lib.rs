@@ -1,18 +1,18 @@
 //! Read MonoGame content files: the XNB container and the compiled MGFX effects inside it.
 //!
 //! MonoGame (and XNA 4.0, which FNA also reads) ships a game's content as `.xnb` files. This crate reads them from
-//! bytes you give it, without writing, decompressing or running any game code:
+//! bytes you give it, without writing or running any game code:
 //!
-//! - [`xnb`]: the XNB container (version 5, uncompressed): its header, its type-reader table as stored, and the
-//!   primary object's bytes, with reads for the values XNA's built-in readers write (7-bit encoded lengths, strings,
-//!   byte arrays, raw `Color` textures). A game's own readers are the caller's to name: the container hands their
-//!   bytes over.
+//! - [`xnb`]: the XNB container (version 5; [`xnb::decompress`] reads the LZX compression of XNA 4.0's content): its
+//!   header, its type-reader table as stored, and the primary object's bytes, with reads for the values XNA's built-in
+//!   readers write (7-bit encoded lengths, strings, byte arrays, raw `Color` textures). A game's own readers are the
+//!   caller's to name: the container hands their bytes over.
 //! - [`mgfx`]: the compiled effect an XNB of MonoGame's `EffectReader` holds (MGFX version 12): constant buffers,
 //!   shaders with their samplers and attributes, parameters, techniques and passes. The OpenGL profile is checked
 //!   against real files; a DirectX 11 profile byte is read the same way but has only been tried on hand-built bytes.
 //!
 //! Every read is checked: untrusted bytes give an [`xnb::Error`] naming the offset and what was expected, never a
-//! panic. What the crate does not read is refused by name rather than guessed at (compressed files, other versions,
+//! panic. What the crate does not read is refused by name rather than guessed at (LZ4-compressed files, other versions,
 //! shared resources, effect passes with render state).
 //!
 //! # Example

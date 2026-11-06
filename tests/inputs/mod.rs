@@ -9,6 +9,7 @@
 primase_testdata::inputs! {
     games {
         Stuntboost = "stuntboost",
+        Terraria = "terraria",
     }
     installs {
         Stuntboost {
@@ -16,16 +17,38 @@ primase_testdata::inputs! {
             source: "the user's own install",
             gate: true,
         },
+        Terraria {
+            about: "Terraria's install folder (the folder that holds `Content`: XNA 4.0 XNB files, most of them LZX-compressed)",
+            source: "the user's own install",
+            gate: true,
+        },
     }
     keys {}
     tools {}
-    oracle_sets {}
+    oracle_sets {
+        Xna = "xna" {
+            about: "XNA 4.0's own readings of a game's content",
+            source: "independent: XNA Framework 4.0 (Microsoft.Xna.Framework 4.0.0.0), run by primase-oracles' xna/XnaContent.cs",
+        },
+    }
     declared {
         Query::Install(Game::Stuntboost, Some("Content")) => {
             status: Live,
             gate: true,
             about: r#"STUNTBOOST's `Content` folder (1875 `.xnb` files, 18 of them effects), every file read by tests/real_data.rs"#,
             source: r#"the user's own install"#,
+        },
+        Query::Install(Game::Terraria, Some("Content")) => {
+            status: Live,
+            gate: true,
+            about: r#"Terraria's `Content` folder (15,994 `.xnb` files, 15,108 of them LZX-compressed), every file decompressed by tests/real_data.rs"#,
+            source: r#"the user's own install"#,
+        },
+        Query::Oracle(OracleSet::Xna, Game::Terraria, "content.jsonl") => {
+            status: Live,
+            gate: true,
+            about: r#"XNA 4.0's reading of every `.xnb` of Terraria's `Content`: its header and the SHA-256 of the content after it, decompressed by XNA's own `DecompressStream` (JSON lines; tests/real_data.rs compares)"#,
+            source: r#"independent: XNA Framework 4.0's `Microsoft.Xna.Framework.Content.DecompressStream`, run by primase-oracles' xna/XnaContent.cs"#,
         },
     }
     debug {}

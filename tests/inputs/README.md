@@ -14,12 +14,21 @@ fails when they differ); [the README](../../README.md#running-the-tests) says ho
 | key | gate | about | source |
 | --- | --- | --- | --- |
 | `installs.stuntboost` | yes | STUNTBOOST's install folder (the folder that holds `Content`: MonoGame 3.8.1 DesktopGL XNB files) | the user's own install |
+| `installs.terraria` | yes | Terraria's install folder (the folder that holds `Content`: XNA 4.0 XNB files, most of them LZX-compressed) | the user's own install |
 | `scratch.root` | - | where real-data tests write their outputs (the OS temporary folder when unset) | - |
+
+#### Oracle sets (`<oracles.root>/<set>/<game>/`)
+
+| set | about | source |
+| --- | --- | --- |
+| `oracles.xna` | XNA 4.0's own readings of a game's content | independent: XNA Framework 4.0 (Microsoft.Xna.Framework 4.0.0.0), run by primase-oracles' xna/XnaContent.cs |
 
 #### Declared files
 
 | key | status | gate | about | source |
 | --- | --- | --- | --- | --- |
 | `installs.stuntboost/Content` | live | yes | STUNTBOOST's `Content` folder (1875 `.xnb` files, 18 of them effects), every file read by tests/real_data.rs | the user's own install |
+| `installs.terraria/Content` | live | yes | Terraria's `Content` folder (15,994 `.xnb` files, 15,108 of them LZX-compressed), every file decompressed by tests/real_data.rs | the user's own install |
+| `oracles.xna.terraria/content.jsonl` | live | yes | XNA 4.0's reading of every `.xnb` of Terraria's `Content`: its header and the SHA-256 of the content after it, decompressed by XNA's own `DecompressStream` (JSON lines; tests/real_data.rs compares) | independent: XNA Framework 4.0's `Microsoft.Xna.Framework.Content.DecompressStream`, run by primase-oracles' xna/XnaContent.cs |
 
 <!-- end of real-data inputs -->

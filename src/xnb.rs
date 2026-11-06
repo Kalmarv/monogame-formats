@@ -1,12 +1,19 @@
-//! The XNB container, version 5 (XNA 4.0; MonoGame writes the same), uncompressed.
+//! The XNB container, version 5 (XNA 4.0; MonoGame writes the same), and the LZX compression XNA's content uses.
 //!
 //! Layout: `XNB`, the target platform (one byte, as stored: `w` Windows, `d` DesktopGL, ...), the version (5), flags
 //! (0x01 HiDef profile, 0x40 LZ4-compressed, 0x80 LZX-compressed), the file size (u32, little-endian, the whole
 //! file); then the type-reader table (a 7-bit encoded count, each reader a 7-bit length-prefixed UTF-8 name, as
 //! stored and assembly-qualified, and an i32 version), the shared-resource count (7-bit), and the primary object: a
-//! 7-bit type id (0 null, else 1 + its reader's index) and the bytes its reader wrote. A compressed file is refused,
-//! naming its flag ([`Error::Compressed`]); so is any other version, a flag this reader does not know, and a size
-//! other than the file's.
+//! 7-bit type id (0 null, else 1 + its reader's index) and the bytes its reader wrote. [`Xnb::parse`] reads an
+//! uncompressed file; a compressed one is refused, naming its flag ([`Error::Compressed`]), and so is any other
+//! version, a flag this reader does not know, and a size other than the file's.
+//!
+//! [`decompress`] makes an LZX-compressed file (flag 0x80, as XNA 4.0's content pipeline writes it) the uncompressed
+//! file it stands for. After the header comes the decompressed size (u32) of what follows the header, then blocks
+//! to the end of the file: a block is a big-endian u16 compressed size and 32 KiB of output, or `0xFF`, a big-endian
+//! u16 output size and the compressed size, then that many bytes of LZX (a 64 KiB window), one frame each
+//! ([`primase_foundations::compress::LzxDecoder`]). A block of size 0 ends the stream; only zero bytes may follow it.
+//! The output must be exactly the stated size. LZ4-compressed files (flag 0x40, MonoGame's) are refused.
 //!
 //! The built-in readers' values: [`Content::string`] (`StringReader`: a 7-bit byte length, then UTF-8) and
 //! [`Content::byte_array`] (`ArrayReader<Byte>`: an i32 count, then the bytes). Which reader wrote the object is the
@@ -28,6 +35,16 @@ pub enum Compression {
     Lzx,
     /// Flag 0x40.
     Lz4,
+}
+
+impl Compression {
+    /// What reading a file compressed so takes.
+    fn then(self) -> &'static str {
+        match self {
+            Compression::Lzx => "decompress it first (xnb::decompress)",
+            Compression::Lz4 => "not read",
+        }
+    }
 }
 
 impl std::fmt::Display for Compression {
@@ -59,8 +76,9 @@ pub enum Error {
         /// What was expected or found.
         detail: String,
     },
-    /// A compressed XNB: only uncompressed content is read.
-    #[error("XNB compressed with {0}: only uncompressed content is read")]
+    /// A compressed XNB given to [`Xnb::parse`] ([`decompress`] reads LZX), or an LZ4-compressed one given to
+    /// [`decompress`].
+    #[error("XNB compressed with {0}: {then}", then = .0.then())]
     Compressed(Compression),
 }
 
@@ -230,8 +248,100 @@ pub struct Xnb<'a> {
     origin: usize,
 }
 
+/// The window XNA's content compressor uses: 2^16 bytes.
+const LZX_WINDOW_BITS: u32 = 16;
+
+/// `file` as an uncompressed XNB, for [`Xnb::parse`]: the file itself when it is not compressed, else (LZX, flag 0x80)
+/// its header with the flag cleared and the file size made the uncompressed file's, then the decompressed content.
+/// See the module documentation; an LZ4-compressed file is refused ([`Error::Compressed`]).
+pub fn decompress(file: &[u8]) -> Result<std::borrow::Cow<'_, [u8]>> {
+    use primase_foundations::compress::LzxDecoder;
+    let header = file.get(..HEADER).ok_or_else(|| {
+        bad(
+            file.len(),
+            format!("a {}-byte file: shorter than the header", file.len()),
+        )
+    })?;
+    let flags = header.get(5).copied().unwrap_or(0);
+    if flags & LZ4 != 0 {
+        return Err(Error::Compressed(Compression::Lz4));
+    }
+    if flags & LZX == 0 {
+        return Ok(std::borrow::Cow::Borrowed(file));
+    }
+    let mut c = Content::of_bytes(file);
+    c.bytes(6)?;
+    let size = c.u32()?;
+    if usize::try_from(size).ok() != Some(file.len()) {
+        return Err(bad(
+            6,
+            format!("file size {size}, the file is {} bytes", file.len()),
+        ));
+    }
+    let stated =
+        usize::try_from(c.u32()?).map_err(|_| bad(HEADER, "a decompressed size past this platform's"))?;
+    let total = stated
+        .checked_add(HEADER)
+        .and_then(|t| u32::try_from(t).ok())
+        .ok_or_else(|| {
+            bad(
+                HEADER,
+                format!("a decompressed size of {stated}: the file would pass 4 GiB"),
+            )
+        })?;
+    let mut out = Vec::new();
+    // what is allocated grows with what the frames make, up to the stated size
+    out.try_reserve(HEADER.saturating_add(stated.min(1 << 20)))
+        .map_err(|_| bad(HEADER, "no memory for the decompressed content"))?;
+    out.extend_from_slice(header.get(..5).unwrap_or_default());
+    out.push(flags & !LZX);
+    out.extend_from_slice(&total.to_le_bytes());
+    let mut lzx = LzxDecoder::new(LZX_WINDOW_BITS).map_err(|e| bad(HEADER, e.to_string()))?;
+    while c.remaining() > 0 {
+        let at = c.position();
+        let hi = c.u8()?;
+        let (frame, block) = if hi == 0xFF {
+            let frame = u16::from_be_bytes([c.u8()?, c.u8()?]);
+            (frame, u16::from_be_bytes([c.u8()?, c.u8()?]))
+        } else {
+            (0x8000, u16::from_be_bytes([hi, c.u8()?]))
+        };
+        if frame == 0 || block == 0 {
+            let rest = c.bytes(c.remaining())?;
+            if let Some(i) = rest.iter().position(|&b| b != 0) {
+                return Err(bad(
+                    c.position().saturating_sub(rest.len()).saturating_add(i),
+                    "a byte other than zero after the block that ends the stream",
+                ));
+            }
+            break;
+        }
+        let input_at = c.position();
+        let input = c.bytes(usize::from(block))?;
+        let made = out.len().saturating_sub(HEADER);
+        if made.saturating_add(usize::from(frame)) > stated {
+            return Err(bad(at, format!("frames past the decompressed size {stated}")));
+        }
+        let bytes = lzx
+            .frame(input, usize::from(frame))
+            .map_err(|e| bad(input_at, format!("the LZX block of output byte {made}: {e}")))?;
+        out.try_reserve(bytes.len())
+            .map_err(|_| bad(at, "no memory for the decompressed content"))?;
+        out.extend_from_slice(bytes);
+    }
+    let made = out.len().saturating_sub(HEADER);
+    if made != stated {
+        return Err(bad(
+            file.len(),
+            format!("{made} bytes decompressed, {stated} stated"),
+        ));
+    }
+    Ok(std::borrow::Cow::Owned(out))
+}
+
 impl<'a> Xnb<'a> {
-    /// Parse an XNB's header and type-reader table. See the module documentation.
+    /// Parse an uncompressed XNB's header and type-reader table ([`decompress`] a compressed one first). See the
+    /// module documentation.
     pub fn parse(bytes: &'a [u8]) -> Result<Xnb<'a>> {
         let mut c = Content {
             cursor: Cursor::new(bytes),
@@ -769,6 +879,101 @@ mod tests {
         body.extend_from_slice(&i32::MAX.to_le_bytes());
         let f = xnb(0, &[STRING_READER, BYTES_READER], 0, &body);
         assert!(Xnb::parse(&f).unwrap().byte_array().is_err());
+    }
+
+    /// `content` (what follows an XNB's header) as one LZX frame: an uncompressed block, laid out as libmspack's
+    /// lzxd.c reads it (no translation bit, block type 3 and the length in 28 bits, padding to the word, the three
+    /// repeated offsets 1, 1, 1, the bytes, a pad byte if odd).
+    fn lzx_stored(content: &[u8]) -> Vec<u8> {
+        let n = content.len() as u32;
+        let bits: u32 = 3 << 24 | n; // 0, then 011, then the 24-bit length: 28 bits, then 4 to the word
+        let (w0, w1) = ((bits >> 12) as u16, ((bits << 4) & 0xFFFF) as u16);
+        let mut f = Vec::new();
+        f.extend_from_slice(&w0.to_le_bytes());
+        f.extend_from_slice(&w1.to_le_bytes());
+        for _ in 0..3 {
+            f.extend_from_slice(&1u32.to_le_bytes());
+        }
+        f.extend_from_slice(content);
+        if n % 2 == 1 {
+            f.push(0);
+        }
+        f
+    }
+
+    /// An LZX-compressed XNB of the uncompressed file `plain`: its content in one block of the 0xFF form, then `end`.
+    fn lzx_xnb(plain: &[u8], end: &[u8]) -> Vec<u8> {
+        let content = &plain[HEADER..];
+        let frame = lzx_stored(content);
+        let mut f = plain[..HEADER].to_vec();
+        f[5] |= LZX;
+        f.extend_from_slice(&(content.len() as u32).to_le_bytes());
+        f.push(0xFF);
+        f.extend_from_slice(&(content.len() as u16).to_be_bytes());
+        f.extend_from_slice(&(frame.len() as u16).to_be_bytes());
+        f.extend_from_slice(&frame);
+        f.extend_from_slice(end);
+        let size = f.len() as u32;
+        f[6..10].copy_from_slice(&size.to_le_bytes());
+        f
+    }
+
+    #[test]
+    fn an_lzx_compressed_file_decompresses_to_the_file_it_stands_for() {
+        let plain = xnb(HI_DEF, &[STRING_READER], 0, &string_body(1, "packed with LZX"));
+        assert!(matches!(
+            decompress(&plain).unwrap(),
+            std::borrow::Cow::Borrowed(_)
+        ));
+        for end in [&[][..], &[0, 0], &[0, 0, 0, 0, 0]] {
+            let packed = lzx_xnb(&plain, end);
+            let file = decompress(&packed).unwrap();
+            assert_eq!(&*file, &plain[..], "end {end:?}");
+            assert_eq!(Xnb::parse(&file).unwrap().string().unwrap(), "packed with LZX");
+            // parse refuses the compressed file, pointing at decompress
+            let e = Xnb::parse(&packed).unwrap_err().to_string();
+            assert!(e.contains("LZX (flag 0x80): decompress it first"), "{e}");
+        }
+    }
+
+    #[test]
+    fn lzx_files_are_strict() {
+        let plain = xnb(0, &[STRING_READER], 0, &string_body(1, "abc"));
+        let err = |f: &[u8]| decompress(f).unwrap_err().to_string();
+        // a byte other than zero after the block that ends the stream
+        assert!(err(&lzx_xnb(&plain, &[0, 0, 1])).contains("other than zero"));
+        // a stated size other than what the frames make
+        let mut more = lzx_xnb(&plain, &[]);
+        more[HEADER] += 1;
+        assert!(err(&more).contains("decompressed,"), "{}", err(&more));
+        let mut less = lzx_xnb(&plain, &[]);
+        less[HEADER] -= 1;
+        assert!(
+            err(&less).contains("past the decompressed size"),
+            "{}",
+            err(&less)
+        );
+        // a block cut short, and a file size other than the file's
+        let cut = lzx_xnb(&plain, &[]);
+        let mut short = cut[..cut.len() - 1].to_vec();
+        let size = short.len() as u32;
+        short[6..10].copy_from_slice(&size.to_le_bytes());
+        assert!(decompress(&short).is_err());
+        assert!(err(&cut[..cut.len() - 1]).contains("file size"));
+        // the LZX stream's own refusals name the block
+        let mut broken = lzx_xnb(&plain, &[]);
+        // after the decompressed size (4 bytes), the block's header (5) and the frame's first two words (4): the
+        // first repeated offset, made 0
+        broken[HEADER + 13] = 0;
+        let e = err(&broken);
+        assert!(
+            e.contains("the LZX block of output byte 0") && e.contains("repeated offset of 0"),
+            "{e}"
+        );
+        // LZ4 is refused by name
+        let mut lz4 = plain.clone();
+        lz4[5] |= LZ4;
+        assert!(err(&lz4).contains("LZ4 (flag 0x40): not read"));
     }
 
     #[test]

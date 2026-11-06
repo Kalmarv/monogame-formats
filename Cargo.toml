@@ -14,6 +14,8 @@ publish.workspace = true
 
 [dev-dependencies]
 primase-testdata.workspace = true
+sha2.workspace = true
+serde_json.workspace = true
 
 [dependencies]
 primase-foundations.workspace = true
@@ -26,7 +28,7 @@ workspace = true
 
 
 [workspace.package]
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.99"
 license = "GPL-3.0-or-later"
@@ -34,8 +36,10 @@ repository = "https://github.com/Kalmarv/monogame-formats"
 publish = true
 
 [workspace.dependencies]
-primase-foundations = "0.3.1"
-primase-testdata = "0.1.8"
+primase-foundations = { version = "0.3.6", features = ["compress"] }
+primase-testdata = "0.1.13"
+sha2 = { version = "=0.11.1", default-features = false }
+serde_json = { version = "=1.0.154", default-features = false, features = ["std"] }
 thiserror = { version = "=2.0.21", default-features = false, features = ["std"] }
 
 [workspace.lints.rust]

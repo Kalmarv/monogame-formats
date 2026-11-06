@@ -6,7 +6,7 @@ A Rust library that reads MonoGame and XNA content files (`.xnb`) and the compil
 
 ## Features
 
-- Reads XNB containers, version 5 (XNA 4.0 and MonoGame), uncompressed
+- Reads XNB containers, version 5 (XNA 4.0 and MonoGame), uncompressed or LZX-compressed as XNA 4.0's content pipeline writes them
 - Exposes the header's platform byte and HiDef flag, and the type-reader table in file order
 - Splits reader type names into their unqualified name, base name and generic arguments
 - Reads the values of XNA's built-in string and byte-array readers
