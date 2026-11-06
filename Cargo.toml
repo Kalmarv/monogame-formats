@@ -28,7 +28,7 @@ workspace = true
 
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 rust-version = "1.99"
 license = "GPL-3.0-or-later"
@@ -37,7 +37,7 @@ publish = true
 
 [workspace.dependencies]
 primase-foundations = { version = "0.3.6", features = ["compress"] }
-primase-testdata = "0.1.13"
+primase-testdata = "0.1.15"
 sha2 = { version = "=0.11.1", default-features = false }
 serde_json = { version = "=1.0.154", default-features = false, features = ["std"] }
 thiserror = { version = "=2.0.21", default-features = false, features = ["std"] }

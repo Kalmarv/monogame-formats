@@ -481,7 +481,7 @@ dependencies = [
 
 [[package]]
 name = "monogame-formats"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "primase-foundations",
  "primase-testdata",
@@ -551,9 +551,9 @@ dependencies = [
 
 [[package]]
 name = "primase-testdata"
-version = "0.1.13"
+version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70d1ddd3491e568631a647f3a72ee51d08cd2b813af51dca17e77386106ee998"
+checksum = "da8603efbc7317a8c09658f4bfb7180f3c66fba18634fe83907deff8dea3c295"
 dependencies = [
  "blake3",
  "serde_json",

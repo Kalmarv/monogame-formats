@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 (2026-11-06)
+
+- The real-data tests check their inputs against primase-testdata 0.1.15, whose `installs.stuntboost` is STUNTBOOST's Steam build 26429886 (2026-11-04): its `Content` holds 1,881 `.xnb` files (18 of them effects), six more than build 26237614, and every one still reads.
+
 ## 0.2.0 (2026-11-06)
 
 - `xnb::decompress`: an LZX-compressed XNB (flag 0x80, as XNA 4.0's content pipeline writes it) becomes the

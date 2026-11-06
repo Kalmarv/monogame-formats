@@ -27,7 +27,7 @@ fails when they differ); [the README](../../README.md#running-the-tests) says ho
 
 | key | status | gate | about | source |
 | --- | --- | --- | --- | --- |
-| `installs.stuntboost/Content` | live | yes | STUNTBOOST's `Content` folder (1875 `.xnb` files, 18 of them effects), every file read by tests/real_data.rs | the user's own install |
+| `installs.stuntboost/Content` | live | yes | STUNTBOOST's `Content` folder (Steam build 26429886: 1,881 `.xnb` files, 18 of them effects), every file read by tests/real_data.rs | the user's own install |
 | `installs.terraria/Content` | live | yes | Terraria's `Content` folder (15,994 `.xnb` files, 15,108 of them LZX-compressed), every file decompressed by tests/real_data.rs | the user's own install |
 | `oracles.xna.terraria/content.jsonl` | live | yes | XNA 4.0's reading of every `.xnb` of Terraria's `Content`: its header and the SHA-256 of the content after it, decompressed by XNA's own `DecompressStream` (JSON lines; tests/real_data.rs compares) | independent: XNA Framework 4.0's `Microsoft.Xna.Framework.Content.DecompressStream`, run by primase-oracles' xna/XnaContent.cs |
 
